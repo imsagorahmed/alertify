@@ -1,34 +1,47 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Square, SkipForward, Volume2, VolumeX, Coffee, Briefcase, BellRing, BellOff, Bell } from 'lucide-react';
+import {
+  Play, Pause, Square, SkipForward, Volume2, VolumeX,
+  Coffee, Briefcase, BellRing, BellOff, Bell
+} from 'lucide-react';
+
+type SendNotificationType = {
+  title: string;
+  body?: string;
+};
 
 const Home = () => {
-  const [workMins, setWorkMins] = useState("25");
-  const [workSecs, setWorkSecs] = useState("0");
-  const [breakMins, setBreakMins] = useState("5");
-  const [breakSecs, setBreakSecs] = useState("0");
-  
-  const [isActive, setIsActive] = useState(false);
-  const [isWorkMode, setIsWorkMode] = useState(true);
-  const [timeLeft, setTimeLeft] = useState(1500); 
-  const [isMuted, setIsMuted] = useState(false);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [notificationPermission, setNotificationPermission] = useState(
+  // Timer settings
+  const [workMins, setWorkMins] = useState<string>("25");
+  const [workSecs, setWorkSecs] = useState<string>("0");
+  const [breakMins, setBreakMins] = useState<string>("5");
+  const [breakSecs, setBreakSecs] = useState<string>("0");
+
+  // Timer and mode states
+  const [isActive, setIsActive] = useState<boolean>(false);
+  const [isWorkMode, setIsWorkMode] = useState<boolean>(true);
+  const [timeLeft, setTimeLeft] = useState<number>(1500);
+  const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+
+  // Notifications
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
     typeof Notification !== 'undefined' ? Notification.permission : 'denied'
   );
 
-  const timerRef = useRef(null);
-  const audioIntervalRef = useRef(null);
-  const expectedTimeRef = useRef(null);
+  // Refs for timer and alarm
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const audioIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const expectedTimeRef = useRef<number | null>(null);
 
+  /** --- CLOCK UPDATE --- */
   useEffect(() => {
-    const clockInterval = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
+    const clockInterval = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(clockInterval);
   }, []);
 
+  /** --- NOTIFICATION PERMISSION --- */
   const requestNotificationPermission = async () => {
     if (typeof Notification !== 'undefined') {
       const permission = await Notification.requestPermission();
@@ -36,17 +49,18 @@ const Home = () => {
     }
   };
 
-  const sendNotification = (title, body) => {
+  /** --- SEND NOTIFICATION --- */
+  const sendNotification = ({ title, body }: SendNotificationType) => {
     if (notificationPermission === 'granted') {
       try {
         const notification = new Notification(title, {
           body: body,
-          icon: 'https://cdn-icons-png.flaticon.com/512/2553/2553391.png'
+          icon: 'https://cdn-icons-png.flaticon.com/512/2553/2553391.png',
         });
 
-        notification.onclick = function() {
+        notification.onclick = () => {
           window.focus();
-          this.close();
+          notification.close();
         };
       } catch (err) {
         console.error("Notification error:", err);
@@ -54,75 +68,69 @@ const Home = () => {
     }
   };
 
+  /** --- ALARM SOUND INTERVAL --- */
   useEffect(() => {
     if (!isWorkMode && isActive && !isMuted) {
-      audioIntervalRef.current = setInterval(() => {
-        playAlarmClockSound();
-      }, 1500);
-    } else {
-      if (audioIntervalRef.current) {
-        clearInterval(audioIntervalRef.current);
-        audioIntervalRef.current = null;
-      }
+      audioIntervalRef.current = setInterval(() => playAlarmClockSound(), 1500);
+    } else if (audioIntervalRef.current) {
+      clearInterval(audioIntervalRef.current);
+      audioIntervalRef.current = null;
     }
     return () => {
       if (audioIntervalRef.current) clearInterval(audioIntervalRef.current);
     };
   }, [isWorkMode, isActive, isMuted]);
 
+  /** --- TIMER LOGIC --- */
   useEffect(() => {
     if (isActive && timeLeft > 0) {
-      expectedTimeRef.current = Date.now() + (timeLeft * 1000);
-      
+      expectedTimeRef.current = Date.now() + timeLeft * 1000;
+
       const tick = () => {
         if (!expectedTimeRef.current) return;
-        
+
         const now = Date.now();
         const remaining = Math.max(0, Math.round((expectedTimeRef.current - now) / 1000));
-        
-        if (remaining !== timeLeft) {
-          setTimeLeft(remaining);
-        }
 
-        if (remaining <= 0) {
-          handlePhaseEnd();
-        } else {
-          timerRef.current = setTimeout(tick, 1000);
-        }
+        if (remaining !== timeLeft) setTimeLeft(remaining);
+
+        if (remaining <= 0) handlePhaseEnd();
+        else timerRef.current = setTimeout(tick, 1000);
       };
 
       timerRef.current = setTimeout(tick, 1000);
     } else if (isActive && timeLeft === 0) {
       handlePhaseEnd();
-    } else {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
+    } else if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
     }
+
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [isActive, timeLeft]);
 
+  /** --- RESET TIME ON INPUT CHANGES --- */
   useEffect(() => {
     if (!isActive) {
       const wm = parseInt(workMins) || 0;
       const ws = parseInt(workSecs) || 0;
       const bm = parseInt(breakMins) || 0;
       const bs = parseInt(breakSecs) || 0;
-      
-      setTimeLeft(isWorkMode ? (wm * 60 + ws) : (bm * 60 + bs));
+      setTimeLeft(isWorkMode ? wm * 60 + ws : bm * 60 + bs);
     }
   }, [workMins, workSecs, breakMins, breakSecs, isWorkMode, isActive]);
 
+  /** --- PLAY BEEP SOUND --- */
   const playAlarmClockSound = () => {
     try {
-      const AudioContextClass = window.AudioContext || (window).webkitAudioContext;
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContextClass) return;
-      
+
       const ctx = new AudioContextClass();
-      const beep = (time, freq) => {
+
+      const beep = (time: number, freq: number) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'square';
@@ -134,6 +142,7 @@ const Home = () => {
         osc.start(time);
         osc.stop(time + 0.1);
       };
+
       beep(ctx.currentTime, 880);
       beep(ctx.currentTime + 0.2, 880);
     } catch (e) {
@@ -141,43 +150,38 @@ const Home = () => {
     }
   };
 
+  /** --- TIMER PHASE END --- */
   const handlePhaseEnd = () => {
     playAlarmClockSound();
-    
-    if (isWorkMode) {
-      sendNotification("Time's Up!", "Time to take a break.");
-    } else {
-      sendNotification("Break Over!", "Time to get back to work.");
-    }
-    
+    if (isWorkMode) sendNotification({ title: "Time's Up!", body: "Time to take a break." });
+    else sendNotification({ title: "Break Over!", body: "Time to get back to work." });
+
     toggleMode();
   };
 
+  /** --- TOGGLE WORK/BREAK MODE --- */
   const toggleMode = () => {
     const nextIsWork = !isWorkMode;
     setIsWorkMode(nextIsWork);
-    
+
     const wm = parseInt(workMins) || 0;
     const ws = parseInt(workSecs) || 0;
     const bm = parseInt(breakMins) || 0;
     const bs = parseInt(breakSecs) || 0;
-    
-    const nextTime = nextIsWork ? (wm * 60 + ws) : (bm * 60 + bs);
+
+    const nextTime = nextIsWork ? wm * 60 + ws : bm * 60 + bs;
     setTimeLeft(nextTime);
-    expectedTimeRef.current = Date.now() + (nextTime * 1000);
-    
+    expectedTimeRef.current = Date.now() + nextTime * 1000;
+
     if (nextIsWork) setIsMuted(false);
   };
 
+  /** --- TIMER CONTROLS --- */
   const handleStart = () => {
-    if (notificationPermission === 'default') {
-      requestNotificationPermission();
-    }
+    if (notificationPermission === 'default') requestNotificationPermission();
     setIsActive(true);
   };
-  
   const handlePause = () => setIsActive(false);
-
   const handleStop = () => {
     setIsActive(false);
     setIsWorkMode(true);
@@ -186,15 +190,16 @@ const Home = () => {
     setTimeLeft(wm * 60 + ws);
     setIsMuted(false);
   };
-
   const skipCurrent = () => toggleMode();
 
-  const formatTime = (seconds) => {
+  /** --- FORMAT TIME --- */
+  const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  /** --- CLOCK HANDS --- */
   const secondsDegrees = (currentTime.getSeconds() / 60) * 360;
   const minutesDegrees = ((currentTime.getMinutes() + currentTime.getSeconds() / 60) / 60) * 360;
   const hoursDegrees = ((currentTime.getHours() % 12 + currentTime.getMinutes() / 60) / 12) * 360;
@@ -202,7 +207,7 @@ const Home = () => {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 font-sans text-slate-900">
       <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 border border-slate-100 relative overflow-hidden">
-        
+
         {!isWorkMode && isActive && (
           <div className="absolute inset-0 bg-emerald-500/5 animate-pulse pointer-events-none" />
         )}
@@ -214,7 +219,7 @@ const Home = () => {
           </h1>
           <div className="flex gap-2">
             {notificationPermission !== 'granted' && (
-              <button 
+              <button
                 onClick={requestNotificationPermission}
                 className="p-2 bg-amber-50 text-amber-600 rounded-full hover:bg-amber-100 transition-colors"
                 title="Enable Browser Notifications"
@@ -223,17 +228,16 @@ const Home = () => {
               </button>
             )}
             {!isWorkMode && (
-              <button 
+              <button
                 onClick={() => setIsMuted(!isMuted)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-sm ${
-                  isMuted ? 'bg-slate-200 text-slate-600' : 'bg-red-500 text-white animate-pulse'
-                }`}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-sm ${isMuted ? 'bg-slate-200 text-slate-600' : 'bg-red-500 text-white animate-pulse'
+                  }`}
               >
                 {isMuted ? <BellOff size={14} /> : <BellRing size={14} />}
                 {isMuted ? 'ALARM MUTED' : 'STOP ALARM'}
               </button>
             )}
-            <button 
+            <button
               onClick={() => setIsMuted(!isMuted)}
               className="p-2 hover:bg-slate-100 rounded-full transition-colors"
             >
@@ -276,8 +280,8 @@ const Home = () => {
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Work Duration</label>
             <div className="flex gap-2 items-center">
               <div className="flex-1">
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={workMins}
                   disabled={isActive}
                   placeholder="Min"
@@ -287,8 +291,8 @@ const Home = () => {
                 <span className="block text-[8px] text-center text-slate-400 mt-1 uppercase">Minutes</span>
               </div>
               <div className="flex-1">
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={workSecs}
                   disabled={isActive}
                   placeholder="Sec"
@@ -304,8 +308,8 @@ const Home = () => {
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 text-emerald-600">Break Duration</label>
             <div className="flex gap-2 items-center">
               <div className="flex-1">
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={breakMins}
                   disabled={isActive}
                   placeholder="Min"
@@ -315,8 +319,8 @@ const Home = () => {
                 <span className="block text-[8px] text-center text-slate-400 mt-1 uppercase">Minutes</span>
               </div>
               <div className="flex-1">
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={breakSecs}
                   disabled={isActive}
                   placeholder="Sec"
@@ -332,14 +336,14 @@ const Home = () => {
         <div className="flex flex-col gap-3 relative z-10">
           <div className="flex gap-3">
             {!isActive ? (
-              <button 
+              <button
                 onClick={handleStart}
                 className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-200 transition-all active:scale-95"
               >
                 <Play size={20} fill="currentColor" /> Start Alerity
               </button>
             ) : (
-              <button 
+              <button
                 onClick={handlePause}
                 className="flex-1 bg-slate-800 hover:bg-slate-900 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95"
               >
@@ -350,12 +354,12 @@ const Home = () => {
               <Square size={20} fill="currentColor" />
             </button>
           </div>
-          
-          <button 
-            onClick={skipCurrent} 
+
+          <button
+            onClick={skipCurrent}
             className="w-full bg-white border-2 border-slate-100 hover:bg-slate-50 text-slate-500 font-bold py-3 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 text-sm"
           >
-            <SkipForward size={16} /> 
+            <SkipForward size={16} />
             {isWorkMode ? 'Skip to Break' : 'Skip Break'}
           </button>
         </div>
